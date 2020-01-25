@@ -5,7 +5,9 @@
   {mod, {leader_tests_app, []}},
   {applications,
    [kernel,
-    stdlib
+    stdlib,
+    evel,
+    sasl
    ]},
   {env,[]},
   {modules, []},
