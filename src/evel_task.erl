@@ -28,7 +28,7 @@
    task_id :: binary(),
    leader :: pid(),
    certificate :: pid(),
-   id_leader :: true|false
+   is_leader :: true|false
 }).
 
 %%%===================================================================
@@ -116,19 +116,24 @@ handle_cast(_Request, State) ->
    {stop, Reason :: term(), NewState :: #state{}}).
 handle_info(global_register, State=#state{task_id = TaskId}) ->
    Self = self(),
-   {Winner, Certificate} = evel:elect(TaskId, Self),
-   logger:notice("election done for ~p, winner is: ~p (certificate: ~p)",[TaskId, Winner, Certificate]),
+   {Winner, Certificate} = evel:elect(TaskId, Self, [{priority, 1},{link, false}]),
+   logger:notice("[~p] election done for ~p, winner is: ~p (certificate: ~p)",[node(), TaskId, Winner, Certificate]),
+   erlang:monitor(process, Certificate),
    NewState =
    case Winner of
-      Self  -> logger:notice("I am the leader for task ~p!!",[TaskId]),
-               State#state{id_leader = true, certificate = Certificate, leader = Winner};
-      _     -> erlang:monitor(process, Certificate),
-            State#state{id_leader = false, certificate = Certificate, leader = Winner}
+      Self  -> logger:notice("[~p] I am the leader for task ~p!!",[node(), TaskId]),
+               State#state{is_leader = true, certificate = Certificate, leader = Winner};
+      _     ->
+            State#state{is_leader = false, certificate = Certificate, leader = Winner}
 
    end,
    {noreply, NewState};
-handle_info({'DOWN', _MonitorRef, process, Leader, _Info}, #state{certificate = Leader, task_id = Task} = State) ->
-   logger:warning("leader is DOWN for task(~p)",[Task]),
+handle_info({'DOWN', _MonitorRef, process, Cert, _Info},
+    #state{certificate = Cert, task_id = Task, is_leader = AmLeader} = State) ->
+   case AmLeader of
+      true -> logger:notice("[~p] I am not leader anymore for task ~p",[node(), Task]);
+      false -> logger:warning("[~p] leader on other node surrendered for task(~p)",[node(), Task])
+   end,
    erlang:send_after(0, self(), global_register),
    {noreply, State#state{leader = undefined, certificate = undefined}}.
 
