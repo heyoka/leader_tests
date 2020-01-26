@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1]).
+-export([start_link/1, start_link/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -26,6 +26,7 @@
 
 -record(state, {
    task_id :: binary(),
+   priority :: non_neg_integer(),
    leader :: pid(),
    certificate :: pid(),
    is_leader :: true|false
@@ -44,7 +45,10 @@
 -spec(start_link(TaskId :: binary()) ->
    {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link(TaskId) ->
-   gen_server:start_link(?MODULE, [TaskId], []).
+   gen_server:start_link(?MODULE, [TaskId, 1], []).
+
+start_link(TaskId, Priority) ->
+   gen_server:start_link(?MODULE, [TaskId, Priority], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -64,9 +68,9 @@ start_link(TaskId) ->
 -spec(init(Args :: term()) ->
    {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
    {stop, Reason :: term()} | ignore).
-init([TaskId]) ->
+init([TaskId, Priority]) ->
    erlang:send_after(5, self(), global_register),
-   {ok, #state{task_id = TaskId}}.
+   {ok, #state{task_id = TaskId, priority = Priority}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -114,9 +118,9 @@ handle_cast(_Request, State) ->
    {noreply, NewState :: #state{}} |
    {noreply, NewState :: #state{}, timeout() | hibernate} |
    {stop, Reason :: term(), NewState :: #state{}}).
-handle_info(global_register, State=#state{task_id = TaskId}) ->
+handle_info(global_register, State=#state{task_id = TaskId, priority = Priority}) ->
    Self = self(),
-   {Winner, Certificate} = evel:elect(TaskId, Self, [{priority, 1},{link, false}]),
+   {Winner, Certificate} = evel:elect(TaskId, Self, [{priority, Priority},{link, false}]),
    logger:notice("[~p] election done for ~p, winner is: ~p (certificate: ~p)",[node(), TaskId, Winner, Certificate]),
    erlang:monitor(process, Certificate),
    NewState =
